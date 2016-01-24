@@ -1,0 +1,8 @@
+################### Govarbeat Configuration Example #########################
+
+############################# Govarbeat ######################################
+
+govarbeat:
+
+output:
+  console:
