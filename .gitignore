@@ -3,6 +3,6 @@
 /build
 
 .DS_Store
-govarbeat
-govarbeat.test
+/govarbeat
+/govarbeat.test
 *.pyc

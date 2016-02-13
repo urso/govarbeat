@@ -1,0 +1,5 @@
+= Govarbeat Docs
+
+Welcome to the Govarbeat documentation.
+
+

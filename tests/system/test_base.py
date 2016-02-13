@@ -13,5 +13,7 @@ class Test(BaseTest):
                 path=os.path.abspath(self.working_dir) + "/log/*"
         )
 
-        exit_code = self.run_beat()
+        govarbeat_proc = self.start_beat()
+        self.wait_until( lambda: self.log_contains("govarbeat is running"))
+        exit_code = govarbeat_proc.kill_and_wait()
         assert exit_code == 0

@@ -3,9 +3,13 @@
 
 package config
 
+type Config struct {
+	Govarbeat GovarbeatConfig
+}
+
 type GovarbeatConfig struct {
 	Remotes map[string]struct {
-		Host   string
-		Period string
+		Period string `yaml:"period"`
+		Host   string `yaml:"host"`
 	}
 }

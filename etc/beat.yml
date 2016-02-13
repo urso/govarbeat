@@ -3,6 +3,15 @@
 ############################# Govarbeat ######################################
 
 govarbeat:
+  remotes:
+    filebeat:
+      host:
+        - localhost:6001
 
-output:
-  console:
+    packetbeat:
+      host:
+        - localhost:6002
+
+    topbeat:
+      host:
+        - localhost:6003

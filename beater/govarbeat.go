@@ -18,6 +18,8 @@ import (
 )
 
 type Govarbeat struct {
+	Configuration *config.Config
+
 	wg   sync.WaitGroup
 	done chan struct{}
 
@@ -27,8 +29,8 @@ type Govarbeat struct {
 }
 
 type worker struct {
-	host   string
 	name   string
+	host   string
 	period time.Duration
 	done   <-chan struct{}
 }
@@ -44,16 +46,22 @@ func New() *Govarbeat {
 
 func (bt *Govarbeat) Config(b *beat.Beat) error {
 
-	cfg := &config.GovarbeatConfig{}
-	err := cfgfile.Read(&cfg, "")
+	// Load beater configuration
+	err := cfgfile.Read(&bt.Configuration, "")
 	if err != nil {
 		return fmt.Errorf("Error reading config file: %v", err)
 	}
 
-	for name, cfg := range cfg.Remotes {
+	return nil
+}
+
+func (bt *Govarbeat) Setup(b *beat.Beat) error {
+
+	for name, cfg := range bt.Configuration.Govarbeat.Remotes {
 		defaultDuration := 1 * time.Second
 		d := defaultDuration
 		if cfg.Period != "" {
+			var err error
 			d, err = time.ParseDuration(cfg.Period)
 			if err != nil {
 				return err
@@ -75,11 +83,9 @@ func (bt *Govarbeat) Config(b *beat.Beat) error {
 	return nil
 }
 
-func (bt *Govarbeat) Setup(b *beat.Beat) error {
-	return nil
-}
-
 func (bt *Govarbeat) Run(b *beat.Beat) error {
+	logp.Info("demobeat is running! Hit CTRL-C to stop it.")
+
 	for _, w := range bt.workers {
 		bt.wg.Add(1)
 		go func(worker *worker) {
@@ -103,9 +109,10 @@ func (bt *Govarbeat) Stop() {
 func (w *worker) run(client publisher.Client) {
 	ticker := time.NewTicker(w.period)
 	for {
-		stats := make(map[string]float64)
+		stats := map[string]float64{}
 		now := time.Now()
 		last := now
+
 		for {
 			select {
 			case <-w.done:
@@ -113,16 +120,9 @@ func (w *worker) run(client publisher.Client) {
 			case <-ticker.C:
 			}
 
-			resp, err := http.Get(fmt.Sprintf("http://%s/debug/vars", w.host))
+			data, err := readStats(w.host)
 			if err != nil {
-				logp.Info("Failed to retrieve variables: %v", err)
-				break
-			}
-
-			body, err := ioutil.ReadAll(resp.Body)
-			resp.Body.Close()
-			if err != nil {
-				logp.Info("Error reading response: %v", err)
+				logp.Warn("Failed to read vars from %v: %v", w.host, err)
 				break
 			}
 
@@ -130,39 +130,48 @@ func (w *worker) run(client publisher.Client) {
 			now = time.Now()
 			dt := now.Sub(last).Seconds()
 
-			var data map[string]interface{}
-			err = json.Unmarshal(body, &data)
-			if err != nil {
-				logp.Warn("Failed to decode json: %v", err)
-				break
-			}
-
 			event := common.MapStr{
 				"@timestamp": common.Time(now),
 				"type":       w.name,
 			}
-			for name, raw := range data {
-				has := true
-				var total float64
-				switch v := raw.(type) {
-				case int:
-					total = float64(v)
-				case float64:
-					total = v
-				default:
-					has = false
-				}
-				if !has {
-					continue
-				}
-
+			for name, v := range data {
 				if old, ok := stats[name]; ok {
-					event[fmt.Sprintf("total_%s", name)] = total
-					event[fmt.Sprintf("d_%s", name)] = (total - old) / dt
+					event[fmt.Sprintf("d_%s", name)] = (v - old) / dt
 				}
-				stats[name] = total
+				event[fmt.Sprintf("total_%s", name)] = v
+				stats[name] = v
 			}
 			client.PublishEvent(event)
 		}
 	}
+}
+
+func readStats(host string) (map[string]float64, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%v/debug/vars", host))
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	var rawData map[string]interface{}
+	err = json.Unmarshal(body, &rawData)
+	if err != nil {
+		return nil, err
+	}
+
+	data := map[string]float64{}
+	for k, v := range rawData {
+		switch val := v.(type) {
+		case int:
+			data[k] = float64(val)
+		case float64:
+			data[k] = val
+		}
+	}
+	return data, nil
 }
