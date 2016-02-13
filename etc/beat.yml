@@ -5,13 +5,13 @@
 govarbeat:
   remotes:
     filebeat:
-      host:
+      hosts:
         - localhost:6001
 
     packetbeat:
-      host:
+      hosts:
         - localhost:6002
 
     topbeat:
-      host:
+      hosts:
         - localhost:6003

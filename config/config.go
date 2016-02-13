@@ -9,7 +9,7 @@ type Config struct {
 
 type GovarbeatConfig struct {
 	Remotes map[string]struct {
-		Period string `yaml:"period"`
-		Host   string `yaml:"host"`
+		Period string   `yaml:"period"`
+		Hosts  []string `yaml:"host"`
 	}
 }

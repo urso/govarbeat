@@ -68,12 +68,14 @@ func (bt *Govarbeat) Setup(b *beat.Beat) error {
 			}
 		}
 
-		bt.workers = append(bt.workers, &worker{
-			done:   bt.done,
-			host:   cfg.Host,
-			name:   name,
-			period: d,
-		})
+		for _, host := range cfg.Hosts {
+			bt.workers = append(bt.workers, &worker{
+				done:   bt.done,
+				host:   host,
+				name:   name,
+				period: d,
+			})
+		}
 	}
 
 	if len(bt.workers) == 0 {
@@ -84,7 +86,7 @@ func (bt *Govarbeat) Setup(b *beat.Beat) error {
 }
 
 func (bt *Govarbeat) Run(b *beat.Beat) error {
-	logp.Info("demobeat is running! Hit CTRL-C to stop it.")
+	logp.Info("govarbeat is running! Hit CTRL-C to stop it.")
 
 	for _, w := range bt.workers {
 		bt.wg.Add(1)
@@ -133,6 +135,7 @@ func (w *worker) run(client publisher.Client) {
 			event := common.MapStr{
 				"@timestamp": common.Time(now),
 				"type":       w.name,
+				"remote":     w.host,
 			}
 			for name, v := range data {
 				if old, ok := stats[name]; ok {
