@@ -3,7 +3,6 @@ package beater
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"sync"
 	"time"
@@ -32,6 +31,7 @@ type worker struct {
 	name   string
 	host   string
 	period time.Duration
+	client *http.Client
 	done   <-chan struct{}
 }
 
@@ -56,16 +56,18 @@ func (bt *Govarbeat) Config(b *beat.Beat) error {
 }
 
 func (bt *Govarbeat) Setup(b *beat.Beat) error {
-
 	for name, cfg := range bt.Configuration.Govarbeat.Remotes {
-		defaultDuration := 1 * time.Second
-		d := defaultDuration
-		if cfg.Period != "" {
-			var err error
-			d, err = time.ParseDuration(cfg.Period)
-			if err != nil {
-				return err
-			}
+		defaultPeriod := 1 * time.Second
+		defaultTimeout := 30 * time.Second
+
+		period, err := configDuration(cfg.Period, defaultPeriod)
+		if err != nil {
+			return err
+		}
+
+		timeout, err := configDuration(cfg.Timeout, defaultTimeout)
+		if err != nil {
+			return err
 		}
 
 		for _, host := range cfg.Hosts {
@@ -73,7 +75,10 @@ func (bt *Govarbeat) Setup(b *beat.Beat) error {
 				done:   bt.done,
 				host:   host,
 				name:   name,
-				period: d,
+				period: period,
+				client: &http.Client{
+					Timeout: timeout,
+				},
 			})
 		}
 	}
@@ -122,7 +127,7 @@ func (w *worker) run(client publisher.Client) {
 			case <-ticker.C:
 			}
 
-			data, err := readStats(w.host)
+			data, err := w.readStats()
 			if err != nil {
 				logp.Warn("Failed to read vars from %v: %v", w.host, err)
 				break
@@ -149,20 +154,15 @@ func (w *worker) run(client publisher.Client) {
 	}
 }
 
-func readStats(host string) (map[string]float64, error) {
-	resp, err := http.Get(fmt.Sprintf("http://%v/debug/vars", host))
+func (w *worker) readStats() (map[string]float64, error) {
+	resp, err := w.client.Get(fmt.Sprintf("http://%v/debug/vars", w.host))
 	if err != nil {
 		return nil, err
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		return nil, err
-	}
-
+	defer resp.Body.Close()
 	var rawData map[string]interface{}
-	err = json.Unmarshal(body, &rawData)
+	err = json.NewDecoder(resp.Body).Decode(&rawData)
 	if err != nil {
 		return nil, err
 	}
@@ -176,5 +176,13 @@ func readStats(host string) (map[string]float64, error) {
 			data[k] = val
 		}
 	}
+
 	return data, nil
+}
+
+func configDuration(cfg string, d time.Duration) (time.Duration, error) {
+	if cfg != "" {
+		return time.ParseDuration(cfg)
+	}
+	return d, nil
 }
